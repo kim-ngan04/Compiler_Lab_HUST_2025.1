@@ -20,10 +20,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "reader.h"
-#include "token.h"
-#include "error.h"
-#include "scanner.h"
+
+#include "scanner.c"
 
 int main(int argc, char *argv[]) {
   if (argc <= 1) {
