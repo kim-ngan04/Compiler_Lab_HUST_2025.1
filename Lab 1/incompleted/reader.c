@@ -35,3 +35,10 @@ void closeInputStream() {
   fclose(inputStream);
 }
 
+void resetReaderState() {
+  lineNo = 1;
+  colNo = 0;
+  currentChar = ' ';
+}
+
+

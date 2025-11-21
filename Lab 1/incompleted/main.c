@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "scanner.c"
+#include "scanner.h"
 
 int main(int argc, char *argv[]) {
   if (argc <= 1) {

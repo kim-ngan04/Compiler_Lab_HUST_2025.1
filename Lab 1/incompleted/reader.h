@@ -10,8 +10,13 @@
 #define IO_ERROR 0
 #define IO_SUCCESS 1
 
+extern int lineNo;
+extern int colNo;
+extern int currentChar;
+
 int readChar(void);
 int openInputStream(char *fileName);
 void closeInputStream(void);
+void resetReaderState(void);
 
 #endif

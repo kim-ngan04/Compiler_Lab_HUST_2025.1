@@ -4,8 +4,11 @@ LIBS =  -lm
 
 all: scanner
 
-scanner: scanner.o reader.o charcode.o token.o error.o
-	${CC} scanner.o reader.o charcode.o token.o error.o -o scanner
+scanner: scanner.o reader.o charcode.o token.o error.o main.o
+	${CC} scanner.o reader.o charcode.o token.o error.o main.o -o scanner.exe
+
+unit_test_scanner: unit_test_scanner.c reader.o charcode.o token.o error.o
+	${CC} unit_test_scanner.c reader.o charcode.o token.o error.o -lcmocka -o unit_test_scanner.exe
 
 reader.o: reader.c
 	${CC} ${CFLAGS} reader.c
@@ -23,5 +26,4 @@ error.o: error.c
 	${CC} ${CFLAGS} error.c
 
 clean:
-	rm -f *.o *~
-
+	rm -f *.o *~ *.exe

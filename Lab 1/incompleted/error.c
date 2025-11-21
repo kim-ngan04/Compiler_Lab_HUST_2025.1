@@ -23,6 +23,9 @@ void error(ErrorCode err, int lineNo, int colNo) {
     printf("%d-%d:%s\n", lineNo, colNo, ERM_INVALIDSYMBOL);
     break;
   }
+#ifndef UNIT_TEST
   exit(-1);
+#endif
+
 }
 
