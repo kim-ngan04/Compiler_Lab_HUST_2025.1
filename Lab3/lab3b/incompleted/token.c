@@ -1,21 +1,13 @@
 /* 
- * @copyright
- * @author
- * @version
+ * @copyright (c) 2008, Hedspi, Hanoi University of Technology
+ * @author Huu-Duc Nguyen
+ * @version 1.0
  */
 
-#include <stdlib.h>   // dùng cho malloc()
-#include <ctype.h>    // dùng cho toupper()
+#include <stdlib.h>
+#include <ctype.h>
 #include "token.h"
 
-/*
- * Mảng keywords chứa toàn bộ các từ khóa của ngôn ngữ KPL.
- * Mỗi phần tử gồm:
- *   - string: dạng chữ của từ khóa (ví dụ "PROGRAM")
- *   - tokenType: mã token tương ứng (ví dụ KW_PROGRAM)
- *
- * MAX_IDENT_LEN + 1: kích thước tối đa một identifier + ký tự kết thúc '\0'.
- */
 struct {
   char string[MAX_IDENT_LEN + 1];
   TokenType tokenType;
@@ -42,35 +34,14 @@ struct {
   {"TO", KW_TO}
 };
 
-/*
- * keywordEq(kw, string):
- *   - So sánh một keyword (kw) với một chuỗi đọc được từ code (string).
- *   - So sánh KHÔNG phân biệt hoa/thường:
- *       + kw luôn lưu ở dạng IN HOA (PROGRAM, CONST, ...)
- *       + string có thể là dạng người dùng nhập (program, Program, ...)
- *     => Chuyển string sang dạng toupper() trước khi so sánh.
- *
- * Cách hoạt động:
- *   - Duyệt từng ký tự của kw và string.
- *   - Nếu ký tự khác nhau → break → trả về false (0).
- *   - Khi cả hai chuỗi kết thúc cùng lúc ('\0') → trả về true (1).
- */
 int keywordEq(char *kw, char *string) {
   while ((*kw != '\0') && (*string != '\0')) {
-    if (*kw != toupper(*string)) break;  // Chuyển string sang chữ hoa để so sánh
-    kw ++;
-    string ++;
+    if (*kw != *string) break;
+    kw ++; string ++;
   }
   return ((*kw == '\0') && (*string == '\0'));
 }
 
-/*
- * checkKeyword(string):
- *   - Dùng để kiểm tra xem string (identifier đọc được) có phải là keyword hay không.
- *   - Duyệt qua bảng keywords[].
- *   - Nếu trùng → trả về TokenType của từ khóa.
- *   - Nếu không trùng → trả về TK_NONE (tức là không phải keyword).
- */
 TokenType checkKeyword(char *string) {
   int i;
   for (i = 0; i < KEYWORDS_COUNT; i++)
@@ -79,33 +50,14 @@ TokenType checkKeyword(char *string) {
   return TK_NONE;
 }
 
-/*
- * makeToken(tokenType, lineNo, colNo):
- *   - Tạo một token mới trên heap bằng malloc().
- *   - Gán:
- *       + tokenType: loại token
- *       + lineNo, colNo: vị trí xuất hiện trong mã nguồn
- *   - Trả về con trỏ Token*.
- *
- * Token này sau đó sẽ được lexer/parser sử dụng.
- */
 Token* makeToken(TokenType tokenType, int lineNo, int colNo) {
-  Token *token = (Token*)malloc(sizeof(Token));  // cấp phát bộ nhớ
+  Token *token = (Token*)malloc(sizeof(Token));
   token->tokenType = tokenType;
   token->lineNo = lineNo;
   token->colNo = colNo;
   return token;
 }
 
-/*
- * tokenToString(tokenType):
- *   - Hàm trong parser và error reporting dùng để in ra dạng TEXT của token.
- *   - Dùng switch-case để map từ TokenType → chuỗi mô tả.
- *   - Chủ yếu dùng để in lỗi syntax: missing ';', expected keyword BEGIN, ...
- *
- * Trả về:
- *   - Một chuỗi hằng mô tả token.
- */
 char *tokenToString(TokenType tokenType) {
   switch (tokenType) {
   case TK_NONE: return "None";
@@ -135,7 +87,6 @@ char *tokenToString(TokenType tokenType) {
   case KW_FOR: return "keyword FOR";
   case KW_TO: return "keyword TO";
 
-  // SYMBOL TOKENS
   case SB_SEMICOLON: return "\';\'";
   case SB_COLON: return "\':\'";
   case SB_PERIOD: return "\'.\'";
@@ -155,7 +106,6 @@ char *tokenToString(TokenType tokenType) {
   case SB_RPAR: return "\')\'";
   case SB_LSEL: return "\'(.\'";
   case SB_RSEL: return "\'.)\'";
-
   default: return "";
   }
 }

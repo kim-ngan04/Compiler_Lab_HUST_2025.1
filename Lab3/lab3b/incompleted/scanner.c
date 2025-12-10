@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 #include "reader.h"
 #include "charcode.h"
@@ -13,96 +14,67 @@
 #include "error.h"
 #include "scanner.h"
 
-// Các biến toàn cục từ reader.c để theo dõi trạng thái đọc file
-extern int lineNo;       // Số dòng hiện tại
-extern int colNo;        // Cột hiện tại
-extern int currentChar;  // Ký tự đang đọc hiện tại
 
-// Mảng ánh xạ mã ASCII sang loại ký tự (CHAR_LETTER, CHAR_DIGIT, ...)
+extern int lineNo;
+extern int colNo;
+extern int currentChar;
+
 extern CharCode charCodes[];
 
 /***************************************************************/
 
-/* * Hàm skipBlank:
- * Bỏ qua các khoảng trắng (dấu cách, tab, xuống dòng...).
- * Đọc liên tục cho đến khi gặp ký tự không phải khoảng trắng hoặc hết file.
- */
 void skipBlank() {
   while ((currentChar != EOF) && (charCodes[currentChar] == CHAR_SPACE))
     readChar();
 }
 
-/* * Hàm skipComment:
- * Bỏ qua phần chú thích. Trong ngôn ngữ này, chú thích bắt đầu bằng (* và kết thúc bằng *).
- * Sử dụng máy trạng thái hữu hạn (Finite State Machine) đơn giản để xử lý.
- */
 void skipComment() {
   int state = 0;
-  // State 0: Đang ở trong comment bình thường
-  // State 1: Đã gặp dấu * (có thể sắp kết thúc)
-  // State 2: Đã gặp dấu ) ngay sau dấu * -> Kết thúc comment
   while ((currentChar != EOF) && (state < 2)) {
     switch (charCodes[currentChar]) {
-    case CHAR_TIMES: // Gặp dấu *
-      state = 1; 
+    case CHAR_TIMES:
+      state = 1;
       break;
-    case CHAR_RPAR:  // Gặp dấu )
-      if (state == 1) state = 2; // Nếu trước đó là * thì kết thúc (state = 2)
-      else state = 0;            // Nếu không thì quay về trạng thái 0
+    case CHAR_RPAR:
+      if (state == 1) state = 2;
+      else state = 0;
       break;
     default:
-      state = 0; // Gặp ký tự khác thì quay về trạng thái tìm kiếm *
+      state = 0;
     }
     readChar();
   }
-  // Nếu hết file mà chưa đóng comment (state != 2) thì báo lỗi
   if (state != 2) 
-    error(ERR_ENDOFCOMMENT, lineNo, colNo);
+    error(ERR_END_OF_COMMENT, lineNo, colNo);
 }
 
-/* * Hàm readIdentKeyword:
- * Đọc một định danh (tên biến, hàm) hoặc từ khóa.
- * Quy tắc: Bắt đầu bằng chữ cái, theo sau là chữ cái hoặc số.
- */
 Token* readIdentKeyword(void) {
   Token *token = makeToken(TK_NONE, lineNo, colNo);
   int count = 1;
 
-  // Lưu ký tự đầu tiên
-  token->string[0] = (char)currentChar;
+  token->string[0] = toupper((char)currentChar);
   readChar();
 
-  // Đọc tiếp các ký tự tiếp theo nếu là Chữ hoặc Số
   while ((currentChar != EOF) && 
-    ((charCodes[currentChar] == CHAR_LETTER) || (charCodes[currentChar] == CHAR_DIGIT))) {
-    // Chỉ lưu nếu chưa vượt quá độ dài tối đa cho phép
-    if (count <= MAX_IDENT_LEN) token->string[count++] = (char)currentChar;
+	 ((charCodes[currentChar] == CHAR_LETTER) || (charCodes[currentChar] == CHAR_DIGIT))) {
+    if (count <= MAX_IDENT_LEN) token->string[count++] = toupper((char)currentChar);
     readChar();
   }
 
-  // Nếu tên quá dài -> Báo lỗi
   if (count > MAX_IDENT_LEN) {
-    error(ERR_IDENTTOOLONG, token->lineNo, token->colNo);
+    error(ERR_IDENT_TOO_LONG, token->lineNo, token->colNo);
     return token;
   }
 
-  // Kết thúc chuỗi
   token->string[count] = '\0';
-  
-  // Kiểm tra xem chuỗi vừa đọc có phải Từ khóa (Keyword) không (ví dụ: BEGIN, END...)
   token->tokenType = checkKeyword(token->string);
 
-  // Nếu không phải từ khóa, nó là Định danh (IDENTifier)
   if (token->tokenType == TK_NONE)
     token->tokenType = TK_IDENT;
 
   return token;
 }
 
-/* * Hàm readNumber:
- * Đọc một số nguyên dương.
- * Quy tắc: Chuỗi các chữ số liên tiếp.
- */
 Token* readNumber(void) {
   Token *token = makeToken(TK_NUMBER, lineNo, colNo);
   int count = 0;
@@ -113,48 +85,40 @@ Token* readNumber(void) {
   }
 
   token->string[count] = '\0';
-  token->value = atoi(token->string); // Chuyển chuỗi thành giá trị số int
+  token->value = atoi(token->string);
   return token;
 }
 
-/* * Hàm readConstChar:
- * Đọc hằng ký tự (ví dụ: 'A').
- * Quy tắc: Dấu nháy đơn -> Ký tự -> Dấu nháy đơn.
- */
 Token* readConstChar(void) {
   Token *token = makeToken(TK_CHAR, lineNo, colNo);
 
-  readChar(); // Đọc ký tự sau dấu ' mở đầu
+  readChar();
   if (currentChar == EOF) {
     token->tokenType = TK_NONE;
-    error(ERR_INVALIDCHARCONSTANT, token->lineNo, token->colNo);
+    error(ERR_INVALID_CONSTANT_CHAR, token->lineNo, token->colNo);
     return token;
   }
     
-  token->string[0] = currentChar; // Lưu ký tự
+  token->string[0] = currentChar;
   token->string[1] = '\0';
 
-  readChar(); // Đọc ký tự tiếp theo, mong đợi là dấu ' đóng
+  readChar();
   if (currentChar == EOF) {
     token->tokenType = TK_NONE;
-    error(ERR_INVALIDCHARCONSTANT, token->lineNo, token->colNo);
+    error(ERR_INVALID_CONSTANT_CHAR, token->lineNo, token->colNo);
     return token;
   }
 
   if (charCodes[currentChar] == CHAR_SINGLEQUOTE) {
-    readChar(); // Ăn dấu ' đóng
+    readChar();
     return token;
   } else {
     token->tokenType = TK_NONE;
-    error(ERR_INVALIDCHARCONSTANT, token->lineNo, token->colNo);
+    error(ERR_INVALID_CONSTANT_CHAR, token->lineNo, token->colNo);
     return token;
   }
 }
 
-/* * Hàm getToken (Dispatcher):
- * Hàm quan trọng nhất, điều phối việc gọi các hàm đọc token cụ thể
- * dựa trên ký tự hiện tại đang đọc.
- */
 Token* getToken(void) {
   Token *token;
   int ln, cn;
@@ -162,13 +126,10 @@ Token* getToken(void) {
   if (currentChar == EOF) 
     return makeToken(TK_EOF, lineNo, colNo);
 
-  // Dựa vào loại ký tự để quyết định
   switch (charCodes[currentChar]) {
-  case CHAR_SPACE: skipBlank(); return getToken(); // Gặp khoảng trắng thì bỏ qua và gọi đệ quy để lấy token tiếp
-  case CHAR_LETTER: return readIdentKeyword();     // Gặp chữ cái -> Định danh hoặc Từ khóa
-  case CHAR_DIGIT: return readNumber();            // Gặp số -> Số nguyên
-
-  // Xử lý các dấu câu đơn giản 1 ký tự (+, -, *, /)
+  case CHAR_SPACE: skipBlank(); return getToken();
+  case CHAR_LETTER: return readIdentKeyword();
+  case CHAR_DIGIT: return readNumber();
   case CHAR_PLUS: 
     token = makeToken(SB_PLUS, lineNo, colNo);
     readChar(); 
@@ -185,84 +146,63 @@ Token* getToken(void) {
     token = makeToken(SB_SLASH, lineNo, colNo);
     readChar(); 
     return token;
-
-  // Xử lý dấu nhỏ hơn (<) và nhỏ hơn hoặc bằng (<=)
   case CHAR_LT:
     ln = lineNo;
     cn = colNo;
-    readChar(); // Nhìn trước ký tự tiếp theo
+    readChar();
     if ((currentChar != EOF) && (charCodes[currentChar] == CHAR_EQ)) {
-      readChar(); // Ăn dấu =
-      return makeToken(SB_LE, ln, cn); // <=
-    } else return makeToken(SB_LT, ln, cn); // <
-
-  // Xử lý dấu lớn hơn (>) và lớn hơn hoặc bằng (>=)
+      readChar();
+      return makeToken(SB_LE, ln, cn);
+    } else return makeToken(SB_LT, ln, cn);
   case CHAR_GT:
     ln = lineNo;
     cn = colNo;
     readChar();
     if ((currentChar != EOF) && (charCodes[currentChar] == CHAR_EQ)) {
       readChar();
-      return makeToken(SB_GE, ln, cn); // >=
-    } else return makeToken(SB_GT, ln, cn); // >
-
-  // Xử lý dấu bằng (=)
+      return makeToken(SB_GE, ln, cn);
+    } else return makeToken(SB_GT, ln, cn);
   case CHAR_EQ: 
     token = makeToken(SB_EQ, lineNo, colNo);
     readChar(); 
     return token;
-
-  // Xử lý dấu chấm than (!) -> Trong ngôn ngữ này là khác (!=)
   case CHAR_EXCLAIMATION:
     ln = lineNo;
     cn = colNo;
     readChar();
     if ((currentChar != EOF) && (charCodes[currentChar] == CHAR_EQ)) {
       readChar();
-      return makeToken(SB_NEQ, ln, cn); // !=
+      return makeToken(SB_NEQ, ln, cn);
     } else {
-      // Nếu chỉ có ! mà không có = thì là lỗi
       token = makeToken(TK_NONE, ln, cn);
-      error(ERR_INVALIDSYMBOL, ln, cn);
+      error(ERR_INVALID_SYMBOL, ln, cn);
       return token;
     }
-
-  // Các dấu phân cách đơn giản (, ; )
   case CHAR_COMMA:
     token = makeToken(SB_COMMA, lineNo, colNo);
     readChar(); 
     return token;
-  
-  // Xử lý dấu chấm (.) và đóng ngoặc chỉ số mảng ( . ) -> )
   case CHAR_PERIOD:
     ln = lineNo;
     cn = colNo;
     readChar();
-    // Trong KPL, (. tương đương với [ (mở mảng) hoặc .) tương đương ] (đóng mảng)
-    // Ở đây xử lý trường hợp .) tương đương ] (Right Select)
     if ((currentChar != EOF) && (charCodes[currentChar] == CHAR_RPAR)) {
       readChar();
-      return makeToken(SB_RSEL, ln, cn); // .)
-    } else return makeToken(SB_PERIOD, ln, cn); // .
-
+      return makeToken(SB_RSEL, ln, cn);
+    } else return makeToken(SB_PERIOD, ln, cn);
   case CHAR_SEMICOLON:
     token = makeToken(SB_SEMICOLON, lineNo, colNo);
     readChar(); 
     return token;
-
-  // Xử lý dấu hai chấm (:) và phép gán (:=)
   case CHAR_COLON:
     ln = lineNo;
     cn = colNo;
     readChar();
     if ((currentChar != EOF) && (charCodes[currentChar] == CHAR_EQ)) {
       readChar();
-      return makeToken(SB_ASSIGN, ln, cn); // :=
-    } else return makeToken(SB_COLON, ln, cn); // :
-
-  case CHAR_SINGLEQUOTE: return readConstChar(); // Gặp ' -> Xử lý hằng ký tự
-
-  // Xử lý dấu mở ngoặc (
+      return makeToken(SB_ASSIGN, ln, cn);
+    } else return makeToken(SB_COLON, ln, cn);
+  case CHAR_SINGLEQUOTE: return readConstChar();
   case CHAR_LPAR:
     ln = lineNo;
     cn = colNo;
@@ -272,36 +212,28 @@ Token* getToken(void) {
       return makeToken(SB_LPAR, ln, cn);
 
     switch (charCodes[currentChar]) {
-    case CHAR_PERIOD: // Gặp (. -> Tương đương [ (Left Select)
+    case CHAR_PERIOD:
       readChar();
       return makeToken(SB_LSEL, ln, cn);
-    case CHAR_TIMES: // Gặp (* -> Bắt đầu comment
+    case CHAR_TIMES:
       readChar();
-      skipComment(); // Bỏ qua toàn bộ comment
-      return getToken(); // Lấy token tiếp theo sau comment
-    default: // Chỉ là dấu ( bình thường
+      skipComment();
+      return getToken();
+    default:
       return makeToken(SB_LPAR, ln, cn);
     }
-
   case CHAR_RPAR:
     token = makeToken(SB_RPAR, lineNo, colNo);
     readChar(); 
     return token;
-  
-  // Ký tự lạ không nhận diện được
   default:
     token = makeToken(TK_NONE, lineNo, colNo);
-    error(ERR_INVALIDSYMBOL, lineNo, colNo);
+    error(ERR_INVALID_SYMBOL, lineNo, colNo);
     readChar(); 
     return token;
   }
 }
 
-/* * Hàm getValidToken:
- * Wrapper cho getToken.
- * Nếu getToken trả về TK_NONE (do lỗi hoặc ký tự lạ), hàm này sẽ lặp lại
- * để lấy bằng được một token hợp lệ (hoặc EOF).
- */
 Token* getValidToken(void) {
   Token *token = getToken();
   while (token->tokenType == TK_NONE) {
@@ -313,7 +245,7 @@ Token* getValidToken(void) {
 
 
 /******************************************************************/
-/* Hàm in token ra màn hình để debug */
+
 void printToken(Token *token) {
 
   printf("%d-%d:", token->lineNo, token->colNo);
@@ -325,7 +257,6 @@ void printToken(Token *token) {
   case TK_CHAR: printf("TK_CHAR(\'%s\')\n", token->string); break;
   case TK_EOF: printf("TK_EOF\n"); break;
 
-  // Các từ khóa
   case KW_PROGRAM: printf("KW_PROGRAM\n"); break;
   case KW_CONST: printf("KW_CONST\n"); break;
   case KW_TYPE: printf("KW_TYPE\n"); break;
@@ -347,7 +278,6 @@ void printToken(Token *token) {
   case KW_FOR: printf("KW_FOR\n"); break;
   case KW_TO: printf("KW_TO\n"); break;
 
-  // Các ký hiệu
   case SB_SEMICOLON: printf("SB_SEMICOLON\n"); break;
   case SB_COLON: printf("SB_COLON\n"); break;
   case SB_PERIOD: printf("SB_PERIOD\n"); break;
@@ -369,3 +299,4 @@ void printToken(Token *token) {
   case SB_RSEL: printf("SB_RSEL\n"); break;
   }
 }
+
