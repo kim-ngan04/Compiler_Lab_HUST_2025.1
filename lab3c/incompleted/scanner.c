@@ -2,21 +2,6 @@
  * @copyright (c) 2008, Hedspi, Hanoi University of Technology
  * @author Huu-Duc Nguyen
  * @version 1.0
- * 
- * FILE: scanner.c
- * MỤC ĐÍCH:
- *   - Phân tích từ vựng (lexical analysis)
- *   - Chuyển đổi dòng ký tự input thành các token
- *   - Bỏ qua khoảng trắng và comment
- *   - Nhận diện keyword, identifier, số, ký tự, và ký hiệu
- * 
- * CÁC HÀM CHÍNH:
- *   - getToken(): lấy token tiếp theo
- *   - readIdentKeyword(): đọc identifier hoặc keyword
- *   - readNumber(): đọc số nguyên
- *   - readConstChar(): đọc ký tự hằng số
- *   - skipBlank(): bỏ qua khoảng trắng
- *   - skipComment(): bỏ qua comment
  */
 
 #include <stdio.h>
@@ -29,223 +14,103 @@
 #include "error.h"
 #include "scanner.h"
 
-/* Các biến global từ reader.c */
-extern int lineNo;      /* Số dòng hiện tại */
-extern int colNo;       /* Số cột hiện tại */
-extern int currentChar; /* Ký tự hiện tại */
 
-extern CharCode charCodes[];  /* Bảng phân loại ký tự */
+extern int lineNo;
+extern int colNo;
+extern int currentChar;
 
-/******* CÁC HÀM BỎ QUA (SKIP) *******/
+extern CharCode charCodes[];
 
-/* 
- * HÀM skipBlank: Bỏ qua các khoảng trắng
- * 
- * CÁCH HOẠT ĐỘNG:
- *   - Tiếp tục đọc ký tự trong khi nó là CHAR_SPACE
- *   - Dừng khi gặp ký tự khác (hoặc EOF)
- * 
- * VÍ DỤ:
- *   Input: "   variable"
- *   Sau skipBlank(): currentChar = 'v'
- */
+/***************************************************************/
+
 void skipBlank() {
   while ((currentChar != EOF) && (charCodes[currentChar] == CHAR_SPACE))
-    readChar();  // Đọc ký tự tiếp theo (bỏ qua khoảng trắng)
+    readChar();
 }
 
-/* 
- * HÀM skipComment: Bỏ qua comment
- * 
- * CÚ PHÁP COMMENT: (* ... *)
- * 
- * CÁCH HOẠT ĐỘNG:
- *   - Dùng máy trạng thái (state machine) với 2 trạng thái:
- *     state = 0: bình thường
- *     state = 1: gặp dấu '*'
- *     state = 2: gặp '*' rồi ')'  (kết thúc comment)
- *   - Nếu kết thúc file trước khi tìm '*)' → báo lỗi
- * 
- * LOGIC:
- *   - Khi gặp '*': state = 1
- *   - Khi gặp ')' và state = 1: state = 2 (kết thúc)
- *   - Khi gặp ký tự khác: state = 0 (reset)
- * 
- * VÍ DỤ:
- *   Input: "(* This is a comment *) variable"
- *   Sau skipComment(): currentChar = ' ' (dấu cách trước "variable")
- */
 void skipComment() {
-  int state = 0;  /* Trạng thái máy trạng thái */
+  int state = 0;
   while ((currentChar != EOF) && (state < 2)) {
     switch (charCodes[currentChar]) {
-    case CHAR_TIMES:  /* Ký tự '*' */
-      state = 1;  /* Chuyển trạng thái 1 */
+    case CHAR_TIMES:
+      state = 1;
       break;
-    case CHAR_RPAR:   /* Ký tự ')' */
-      if (state == 1) 
-        state = 2;  /* state = 1 + ')' → kết thúc comment */
-      else 
-        state = 0;  /* Còn lại reset state */
+    case CHAR_RPAR:
+      if (state == 1) state = 2;
+      else state = 0;
       break;
-    default:  /* Ký tự khác */
-      state = 0;  /* Reset state */
+    default:
+      state = 0;
     }
-    readChar();  /* Đọc ký tự tiếp theo */
+    readChar();
   }
-  
-  /* Nếu kết thúc file mà state != 2 → comment không đóng */
   if (state != 2) 
     error(ERR_END_OF_COMMENT, lineNo, colNo);
 }
 
-/* 
- * HÀM readIdentKeyword: Đọc identifier hoặc keyword
- * 
- * QUY TẮC IDENTIFIER:
- *   - Bắt đầu bằng chữ cái
- *   - Tiếp theo có thể là chữ cái hoặc chữ số
- *   - Tối đa 15 ký tự
- *   - Không phân biệt hoa/thường (chuyển thành hoa)
- * 
- * CÁCH HOẠT ĐỘNG:
- *   1. Lưu ký tự đầu tiên (chuyển thành hoa)
- *   2. Đọc các ký tự tiếp theo (chữ cái/chữ số)
- *   3. Nếu vượt quá 15 ký tự → báo lỗi ERR_IDENT_TOO_LONG
- *   4. Gọi checkKeyword() để kiểm tra xem có phải keyword không
- *   5. Nếu không là keyword → loại TK_IDENT
- * 
- * TRẢ VỀ:
- *   - Token có tokenType = TK_IDENT hoặc keyword (KW_PROGRAM, KW_VAR, ...)
- * 
- * VÍ DỤ:
- *   Input: "PROGRAM variable123"
- *   readIdentKeyword() → Token(TK_NONE, "PROGRAM") với tokenType = KW_PROGRAM
- *   readIdentKeyword() → Token(TK_NONE, "VARIABLE123")
- */
 Token* readIdentKeyword(void) {
   Token *token = makeToken(TK_NONE, lineNo, colNo);
   int count = 1;
 
-  /* Lưu ký tự đầu tiên (chuyển thành hoa) */
   token->string[0] = toupper((char)currentChar);
   readChar();
 
-  /* Đọc các ký tự tiếp theo (chữ cái hoặc chữ số) */
   while ((currentChar != EOF) && 
 	 ((charCodes[currentChar] == CHAR_LETTER) || (charCodes[currentChar] == CHAR_DIGIT))) {
-    if (count <= MAX_IDENT_LEN) 
-      token->string[count++] = toupper((char)currentChar);
+    if (count <= MAX_IDENT_LEN) token->string[count++] = toupper((char)currentChar);
     readChar();
   }
 
-  /* Kiểm tra độ dài */
   if (count > MAX_IDENT_LEN) {
     error(ERR_IDENT_TOO_LONG, token->lineNo, token->colNo);
     return token;
   }
 
-  /* Kết thúc chuỗi */
   token->string[count] = '\0';
-  
-  /* Kiểm tra xem có phải keyword không */
   token->tokenType = checkKeyword(token->string);
 
-  /* Nếu không phải keyword → là identifier */
   if (token->tokenType == TK_NONE)
     token->tokenType = TK_IDENT;
 
   return token;
 }
 
-/* 
- * HÀM readNumber: Đọc số nguyên
- * 
- * QUY TẮC SỐ NGUYÊN:
- *   - Bao gồm một hoặc nhiều chữ số
- *   - Chuyển đổi thành giá trị int bằng atoi()
- * 
- * CÁCH HOẠT ĐỘNG:
- *   1. Đọc các chữ số liên tiếp
- *   2. Lưu các chữ số vào token->string
- *   3. Kết thúc chuỗi với '\0'
- *   4. Chuyển đổi chuỗi thành số int
- * 
- * TRẢ VỀ:
- *   - Token có tokenType = TK_NUMBER và value = giá trị số
- * 
- * VÍ DỤ:
- *   Input: "123abc"
- *   readNumber() → Token(TK_NUMBER, "123", 123)
- *   currentChar = 'a' (dừng khi gặp ký tự không phải chữ số)
- */
 Token* readNumber(void) {
   Token *token = makeToken(TK_NUMBER, lineNo, colNo);
   int count = 0;
 
-  /* Đọc các chữ số */
   while ((currentChar != EOF) && (charCodes[currentChar] == CHAR_DIGIT)) {
     token->string[count++] = (char)currentChar;
     readChar();
   }
 
-  /* Kết thúc chuỗi */
   token->string[count] = '\0';
-  
-  /* Chuyển đổi chuỗi thành số nguyên */
   token->value = atoi(token->string);
   return token;
 }
 
-/* 
- * HÀM readConstChar: Đọc ký tự hằng số
- * 
- * CÚ PHÁP: 'c' (ký tự nằm giữa hai dấu ngoặc đơn)
- * 
- * CÁCH HOẠT ĐỘNG:
- *   1. Đọc ký tự sau dấu ngoặc đơn đầu
- *   2. Nếu EOF → báo lỗi ERR_INVALID_CONSTANT_CHAR
- *   3. Lưu ký tự vào token->string[0]
- *   4. Đọc ký tự tiếp theo (phải là dấu ngoặc đơn đóng)
- *   5. Nếu không phải dấu ngoặc đơn → báo lỗi
- *   6. Nếu đúng → đọc ký tự tiếp theo và trả về token
- * 
- * TRẢ VỀ:
- *   - Token có tokenType = TK_CHAR và string chứa ký tự
- * 
- * VÍ DỤ:
- *   Input: "'x' 'y'"
- *   readConstChar() → Token(TK_CHAR, "x")
- *   readConstChar() → Token(TK_CHAR, "y")
- * 
- * LỖI:
- *   "''" → lỗi (ký tự rỗng)
- *   "'x" → lỗi (không có dấu ngoặc đóng)
- */
 Token* readConstChar(void) {
   Token *token = makeToken(TK_CHAR, lineNo, colNo);
 
-  readChar();  /* Đọc ký tự sau dấu ngoặc đơn đầu */
+  readChar();
   if (currentChar == EOF) {
     token->tokenType = TK_NONE;
     error(ERR_INVALID_CONSTANT_CHAR, token->lineNo, token->colNo);
     return token;
   }
     
-  /* Lưu ký tự */
   token->string[0] = currentChar;
   token->string[1] = '\0';
 
-  readChar();  /* Đọc ký tự tiếp theo (phải là dấu ngoặc đơn) */
+  readChar();
   if (currentChar == EOF) {
     token->tokenType = TK_NONE;
     error(ERR_INVALID_CONSTANT_CHAR, token->lineNo, token->colNo);
     return token;
   }
 
-  /* Kiểm tra dấu ngoặc đơn đóng */
   if (charCodes[currentChar] == CHAR_SINGLEQUOTE) {
-    readChar();  /* Đọc ký tự tiếp theo */
+    readChar();
     return token;
   } else {
     token->tokenType = TK_NONE;
@@ -369,46 +234,18 @@ Token* getToken(void) {
   }
 }
 
-/* 
- * HÀM getValidToken: Lấy token hợp lệ tiếp theo
- * 
- * CÁCH HOẠT ĐỘNG:
- *   1. Gọi getToken() để lấy token
- *   2. Nếu tokenType = TK_NONE → token không hợp lệ
- *   3. Tiếp tục gọi getToken() cho đến khi gặp token hợp lệ
- *   4. Trả về token hợp lệ
- * 
- * MỤC ĐÍCH:
- *   - Lọc bỏ các token không hợp lệ
- *   - Đảm bảo parser chỉ nhận token hợp lệ
- * 
- * TRẢ VỀ:
- *   - Token với tokenType ≠ TK_NONE
- */
 Token* getValidToken(void) {
   Token *token = getToken();
   while (token->tokenType == TK_NONE) {
-    free(token);  /* Giải phóng token không hợp lệ */
-    token = getToken();  /* Lấy token tiếp theo */
+    free(token);
+    token = getToken();
   }
   return token;
 }
 
-/******* HÀM IN (DEBUG) *******/
 
-/* 
- * HÀM printToken: In thông tin token (dùng cho debug)
- * 
- * CÁCH HOẠT ĐỘNG:
- *   1. In vị trí: "lineNo-colNo:"
- *   2. Tùy theo tokenType, in thông tin cụ thể
- *   3. Ví dụ: "1-5:TK_IDENT(program)"
- * 
- * VÍ DỤ OUTPUT:
- *   "1-1:KW_PROGRAM"
- *   "1-9:TK_IDENT(X)"
- *   "1-11:SB_SEMICOLON"
- */
+/******************************************************************/
+
 void printToken(Token *token) {
 
   printf("%d-%d:", token->lineNo, token->colNo);
